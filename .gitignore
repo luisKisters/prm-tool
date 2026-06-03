@@ -1,0 +1,18 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+.kotlin/
+/build
+
+# Local MCP config (contains an auth token) - never commit
+.mcp.json
+
+# Built artifacts are shipped via GitHub Releases, not committed
+*.apk
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+app/build/
