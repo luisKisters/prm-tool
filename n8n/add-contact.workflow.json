@@ -1,0 +1,512 @@
+{
+  "name": "Contact Capture + LinkedIn Enrichment",
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodes": [
+    {
+      "id": "8e74f442-4c27-45c0-ad8e-b6a91f12543f",
+      "name": "Receive Contact",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        416
+      ],
+      "webhookId": "82b60d79-3fa1-4d2d-b06a-deefa83359d8",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "add-contact",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "f0905fc4-1e26-4607-8e16-105d96822d17",
+      "name": "Transcribe Voice Note (Groq)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        464,
+        416
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "groqApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "voice"
+            },
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "name": "response_format",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "82ebe6b3-fd34-42d8-b618-ee921910df91",
+      "name": "Build Contact Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        688,
+        416
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "firstName",
+              "type": "string",
+              "value": "={{ $('Receive Contact').item.json.body.firstName }}"
+            },
+            {
+              "id": "a2",
+              "name": "lastName",
+              "type": "string",
+              "value": "={{ $('Receive Contact').item.json.body.lastName }}"
+            },
+            {
+              "id": "a3",
+              "name": "company",
+              "type": "string",
+              "value": "={{ $('Receive Contact').item.json.body.company }}"
+            },
+            {
+              "id": "a4",
+              "name": "number",
+              "type": "string",
+              "value": "={{ $('Receive Contact').item.json.body.number }}"
+            },
+            {
+              "id": "a5",
+              "name": "note",
+              "type": "string",
+              "value": "={{ $('Receive Contact').item.json.body.note }}"
+            },
+            {
+              "id": "a6",
+              "name": "events",
+              "type": "string",
+              "value": "={{ $('Receive Contact').item.json.body.events }}"
+            },
+            {
+              "id": "a7",
+              "name": "sources",
+              "type": "string",
+              "value": "={{ $('Receive Contact').item.json.body.sources }}"
+            },
+            {
+              "id": "a8",
+              "name": "clientId",
+              "type": "string",
+              "value": "={{ $('Receive Contact').item.json.body.clientId }}"
+            },
+            {
+              "id": "a9",
+              "name": "createdAt",
+              "type": "string",
+              "value": "={{ $('Receive Contact').item.json.body.createdAt }}"
+            },
+            {
+              "id": "a10",
+              "name": "transcript",
+              "type": "string",
+              "value": "={{ $json.text || '' }}"
+            },
+            {
+              "id": "a11",
+              "name": "fullNote",
+              "type": "string",
+              "value": "={{ ($('Receive Contact').item.json.body.note || '') + ($json.text ? '\\n\\nVoice transcript: ' + $json.text : '') }}"
+            },
+            {
+              "id": "a12",
+              "name": "searchQuery",
+              "type": "string",
+              "value": "={{ '\"' + $('Receive Contact').item.json.body.firstName + ' ' + $('Receive Contact').item.json.body.lastName + '\"' + ' ' + $('Receive Contact').item.json.body.company + ' site:linkedin.com/in' }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cfde2354-ee2a-45b3-ab02-149affb80d1d",
+      "name": "Search LinkedIn (Serper)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        912,
+        416
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { q: $('Build Contact Fields').item.json.searchQuery, num: 1, gl: 'us', hl: 'en' } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "0fcc3be7-ec9a-4aa0-98a0-6529fbc0cc3c",
+      "name": "Evaluate Enrichment",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1136,
+        416
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "linkedinUrl",
+              "type": "string",
+              "value": "={{ ($json.organic && $json.organic[0] && $json.organic[0].link && $json.organic[0].link.includes('linkedin.com/in')) ? $json.organic[0].link : '' }}"
+            },
+            {
+              "id": "e2",
+              "name": "linkedinEnriched",
+              "type": "boolean",
+              "value": "={{ ($json.organic && $json.organic[0] && $json.organic[0].link && $json.organic[0].link.includes('linkedin.com/in')) ? true : false }}"
+            },
+            {
+              "id": "e3",
+              "name": "headline",
+              "type": "string",
+              "value": "={{ ($json.organic && $json.organic[0] && $json.organic[0].snippet) ? $json.organic[0].snippet : '' }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b18bae72-7979-4bc2-b926-0c2ec423c9a6",
+      "name": "Has Note or Voice?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1360,
+        416
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Build Contact Fields').item.json.fullNote }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2da3fb1e-1513-46e8-a8c2-e8a61d263af3",
+      "name": "Summarize Note",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1584,
+        288
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "=Summarize the following contact note in 1-2 concise sentences for CRM context. Output ONLY the summary, no preamble.\n\n{{ $(\"Build Contact Fields\").item.json.fullNote }}",
+        "batching": {}
+      }
+    },
+    {
+      "id": "443179d6-3416-4301-a83e-f553b7d2b396",
+      "name": "Kimi K2 (OpenRouter)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        1664,
+        512
+      ],
+      "parameters": {
+        "model": "moonshotai/kimi-k2.6",
+        "options": {
+          "temperature": 0.3
+        }
+      }
+    },
+    {
+      "id": "8e185bde-da30-4a4c-9231-fabb944c4eb4",
+      "name": "Build Notes",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1936,
+        416
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "n1",
+              "name": "summary",
+              "type": "string",
+              "value": "={{ $json.text || '' }}"
+            },
+            {
+              "id": "n2",
+              "name": "biographies",
+              "type": "string",
+              "value": "={{ ($json.text ? $json.text + '\\n\\n--- \\n' : '') + 'LinkedIn: ' + ($('Evaluate Enrichment').item.json.linkedinUrl || 'n/a') + '\\nEvents: ' + $('Build Contact Fields').item.json.events + '\\nSources: ' + $('Build Contact Fields').item.json.sources + '\\n\\nRaw note: ' + $('Build Contact Fields').item.json.fullNote }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c7ba2ff9-f220-4702-861b-bcb02aeeeb8b",
+      "name": "Create Twenty Person",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2160,
+        416
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://crm.luiskisters.com/rest/people",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twentyApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (function(){ var raw=($('Build Contact Fields').item.json.number||'').replace(/[^\\d+]/g,''); var map={'1':'US','7':'RU','20':'EG','27':'ZA','30':'GR','31':'NL','32':'BE','33':'FR','34':'ES','36':'HU','39':'IT','40':'RO','41':'CH','43':'AT','44':'GB','45':'DK','46':'SE','47':'NO','48':'PL','49':'DE','51':'PE','52':'MX','54':'AR','55':'BR','56':'CL','57':'CO','58':'VE','60':'MY','61':'AU','62':'ID','63':'PH','64':'NZ','65':'SG','66':'TH','81':'JP','82':'KR','84':'VN','86':'CN','90':'TR','91':'IN','92':'PK','94':'LK','98':'IR','212':'MA','213':'DZ','216':'TN','220':'GM','221':'SN','233':'GH','234':'NG','254':'KE','351':'PT','352':'LU','353':'IE','354':'IS','355':'AL','356':'MT','357':'CY','358':'FI','359':'BG','370':'LT','371':'LV','372':'EE','373':'MD','374':'AM','375':'BY','380':'UA','381':'RS','385':'HR','386':'SI','387':'BA','389':'MK','420':'CZ','421':'SK','423':'LI','852':'HK','880':'BD','886':'TW','961':'LB','962':'JO','964':'IQ','965':'KW','966':'SA','968':'OM','971':'AE','972':'IL','973':'BH','974':'QA','976':'MN','977':'NP','994':'AZ','995':'GE','998':'UZ'}; var calling=''; var iso=''; var national=raw; if(raw.charAt(0)==='+'){ var d=raw.slice(1); var lens=[3,2,1]; for(var i=0;i<lens.length;i++){ var c=d.slice(0,lens[i]); if(map[c]){ calling='+'+c; iso=map[c]; national=d.slice(lens[i]); break; } } if(!calling){ national=d; } } var phones=national?{primaryPhoneNumber:national,primaryPhoneCallingCode:calling,primaryPhoneCountryCode:iso}:null; var lk=$('Evaluate Enrichment').item.json.linkedinUrl; var hl=$('Evaluate Enrichment').item.json.headline; var link=lk?{primaryLinkUrl:lk,primaryLinkLabel:'LinkedIn'}:null; var enriched=[]; if(lk){enriched.push('LINKEDIN');} if(hl){enriched.push('JOB_TITLE');} return { name:{firstName:$('Build Contact Fields').item.json.firstName,lastName:$('Build Contact Fields').item.json.lastName}, phones:phones, jobTitle:hl, linkedinLink:link, enriched:enriched }; })() }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "6bb8b16a-2ed1-421e-a36a-c5a983cb171f",
+      "name": "Create Google Contact",
+      "type": "n8n-nodes-base.googleContacts",
+      "typeVersion": 1,
+      "position": [
+        2384,
+        416
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "familyName": "={{ $('Build Contact Fields').item.json.lastName }}",
+        "givenName": "={{ $('Build Contact Fields').item.json.firstName }}",
+        "additionalFields": {
+          "companyUi": {
+            "companyValues": [
+              {
+                "current": true,
+                "name": "={{ $('Build Contact Fields').item.json.company }}",
+                "title": "={{ $('Evaluate Enrichment').item.json.headline }}"
+              }
+            ]
+          },
+          "biographies": "={{ $('Build Notes').item.json.biographies + '\\nTwenty: ' + (($('Create Twenty Person').item.json && $('Create Twenty Person').item.json.body && $('Create Twenty Person').item.json.body.data && $('Create Twenty Person').item.json.body.data.createPerson) ? 'https://crm.luiskisters.com/object/person/' + $('Create Twenty Person').item.json.body.data.createPerson.id : 'n/a') }}",
+          "phoneUi": {
+            "phoneValues": [
+              {
+                "type": "mobile",
+                "value": "={{ $('Build Contact Fields').item.json.number }}"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "96c07d16-6498-40b0-ae49-882199a4cea9",
+      "name": "Respond to App",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2608,
+        416
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'ok', clientId: $('Build Contact Fields').item.json.clientId, linkedin_enriched: $('Evaluate Enrichment').item.json.linkedinEnriched, linkedinUrl: $('Evaluate Enrichment').item.json.linkedinUrl, summary: $('Build Notes').item.json.summary, twentyContactUrl: (($('Create Twenty Person').item.json && $('Create Twenty Person').item.json.body && $('Create Twenty Person').item.json.body.data && $('Create Twenty Person').item.json.body.data.createPerson) ? 'https://crm.luiskisters.com/object/person/' + $('Create Twenty Person').item.json.body.data.createPerson.id : ''), googleContactId: $('Create Google Contact').item.json.contactId } }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Receive Contact": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Voice Note (Groq)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Voice Note (Groq)": {
+      "main": [
+        [
+          {
+            "node": "Build Contact Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Contact Fields": {
+      "main": [
+        [
+          {
+            "node": "Search LinkedIn (Serper)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search LinkedIn (Serper)": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Has Note or Voice?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Note or Voice?": {
+      "main": [
+        [
+          {
+            "node": "Summarize Note",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Notes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Note": {
+      "main": [
+        [
+          {
+            "node": "Build Notes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kimi K2 (OpenRouter)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Summarize Note",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Notes": {
+      "main": [
+        [
+          {
+            "node": "Create Twenty Person",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Twenty Person": {
+      "main": [
+        [
+          {
+            "node": "Create Google Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Google Contact": {
+      "main": [
+        [
+          {
+            "node": "Respond to App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {}
+}
