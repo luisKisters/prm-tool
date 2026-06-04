@@ -1,0 +1,25 @@
+{
+  "name": "prm-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stateless PRM Tool backend: enrich a captured contact (transcribe + LinkedIn + company domain + summary) then, after confirmation, commit it to Twenty CRM and Google Contacts.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "google-auth": "node scripts/google-oauth.mjs"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0",
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "@types/react": "^19.0.7",
+    "typescript": "^5.7.3"
+  }
+}

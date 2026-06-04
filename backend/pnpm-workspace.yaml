@@ -1,0 +1,4 @@
+# sharp is Next's only native dep (runtime image optimization); allow it to build so
+# pnpm's pre-run dependency check doesn't treat the skipped build as fatal.
+allowBuilds:
+  sharp: true
