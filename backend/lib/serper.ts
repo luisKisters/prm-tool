@@ -44,6 +44,68 @@ export async function findLinkedIn(
   };
 }
 
+/**
+ * Best-effort lookup of a *specific* LinkedIn profile's headline + avatar from its URL.
+ * Searches for the exact profile; pulls the headline from the result title (falling back to the
+ * snippet) and the photo from the result's thumbnail (falling back to an image search by name).
+ * Returns empty strings when nothing is found — LinkedIn has no public API, so this is approximate.
+ */
+export async function lookupLinkedInProfile(
+  url: string,
+  name = "",
+): Promise<{ headline: string; avatarUrl: string }> {
+  const slug = linkedinSlug(url);
+  if (!slug) return { headline: "", avatarUrl: "" };
+
+  const data = await serper<SearchResponse>("/search", { q: url, num: 5, gl: "us", hl: "en" });
+  const hit =
+    data?.organic?.find((o) => linkedinSlug(o.link ?? "") === slug) ??
+    data?.organic?.find((o) => (o.link ?? "").includes("linkedin.com/in"));
+
+  const headline = headlineFromTitle(hit?.title) || (hit?.snippet ?? "").trim();
+  let avatarUrl = (hit?.imageUrl ?? "").trim();
+  if (!avatarUrl) {
+    const query = name.trim() || nameFromTitle(hit?.title) || slug.replace(/[-_]+/g, " ");
+    if (query) avatarUrl = await findAvatar(query, "");
+  }
+  return { headline, avatarUrl };
+}
+
+/** Extract the lowercased `/in/<slug>` handle from a LinkedIn URL, or "" if it isn't one. */
+function linkedinSlug(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  try {
+    const u = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`);
+    if (!u.hostname.toLowerCase().includes("linkedin.com")) return "";
+    const m = u.pathname.match(/\/in\/([^/?#]+)/i);
+    return m ? decodeURIComponent(m[1]).toLowerCase() : "";
+  } catch {
+    return "";
+  }
+}
+
+/** Drop a trailing "| LinkedIn" / "- LinkedIn" from a search-result title. */
+function stripLinkedInSuffix(s: string): string {
+  return s.replace(/\s*[|\-–—]\s*LinkedIn.*$/i, "").trim();
+}
+
+/** Google titles look like "Name - Headline | LinkedIn"; return the headline part. */
+function headlineFromTitle(title?: string): string {
+  if (!title) return "";
+  const cleaned = stripLinkedInSuffix(title);
+  const dash = cleaned.indexOf(" - ");
+  return dash >= 0 ? cleaned.slice(dash + 3).trim() : "";
+}
+
+/** Google titles look like "Name - Headline | LinkedIn"; return the name part. */
+function nameFromTitle(title?: string): string {
+  if (!title) return "";
+  const cleaned = stripLinkedInSuffix(title);
+  const dash = cleaned.indexOf(" - ");
+  return (dash > 0 ? cleaned.slice(0, dash) : cleaned).trim();
+}
+
 /** Best-effort profile picture from image search. Frequently empty / approximate. */
 export async function findAvatar(fullName: string, company: string): Promise<string> {
   const q = `${fullName} ${company} linkedin`.trim();

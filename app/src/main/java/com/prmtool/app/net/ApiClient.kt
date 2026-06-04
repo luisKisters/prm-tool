@@ -68,6 +68,28 @@ object ApiClient {
         }
     }
 
+    /** Re-derive headline + avatar for a specific LinkedIn URL. Best-effort; fields may be blank. */
+    fun lookupLinkedin(
+        baseUrl: String,
+        token: String,
+        url: String,
+        name: String,
+    ): LinkedinLookupResponse {
+        val request = Request.Builder()
+            .url(endpoint(baseUrl, "/api/linkedin"))
+            .header("Authorization", "Bearer $token")
+            .post(json.encodeToString(LinkedinLookupRequest(url, name)).toRequestBody(jsonMediaType))
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw IOException("LinkedIn lookup failed: HTTP ${response.code}")
+            }
+            return json.decodeFromString(LinkedinLookupResponse.serializer(), body)
+        }
+    }
+
     fun commit(baseUrl: String, token: String, payload: CommitRequest): CommitResponse {
         val request = Request.Builder()
             .url(endpoint(baseUrl, "/api/commit"))

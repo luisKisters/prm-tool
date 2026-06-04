@@ -15,6 +15,21 @@ data class EnrichResponse(
     val enriched: List<String> = emptyList(),
 )
 
+/** Request body for POST /api/linkedin (re-derive headline + photo from an edited LinkedIn URL). */
+@Serializable
+data class LinkedinLookupRequest(
+    val url: String,
+    val name: String = "",
+)
+
+/** Response from POST /api/linkedin. Fields are empty when the profile can't be resolved. */
+@Serializable
+data class LinkedinLookupResponse(
+    val linkedinUrl: String = "",
+    val headline: String = "",
+    val avatarUrl: String = "",
+)
+
 /** Request body for POST /api/commit. */
 @Serializable
 data class CommitRequest(

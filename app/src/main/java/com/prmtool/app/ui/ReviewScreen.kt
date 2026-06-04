@@ -86,7 +86,7 @@ fun ReviewScreen(
         ) {
             // Avatar + headline header.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(vm.avatarUrl)
+                Avatar(vm.avatarUrl, vm.linkedinLookupInProgress)
                 Spacer(Modifier.size(16.dp))
                 Column {
                     Text(
@@ -119,7 +119,18 @@ fun ReviewScreen(
             Field("Company domain", vm.companyDomain) { vm.companyDomain = it }
             Field("Phone", vm.number, keyboard = KeyboardType.Phone) { vm.number = it }
             Field("Job title / headline", vm.headline) { vm.headline = it }
-            Field("LinkedIn URL", vm.linkedinUrl) { vm.linkedinUrl = it }
+            Field("LinkedIn URL", vm.linkedinUrl) { vm.onLinkedinUrlChange(it) }
+            if (vm.linkedinLookupInProgress) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        "Fetching photo & headline from LinkedIn…",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+            }
             Field("Summary", vm.summary, minLines = 3) { vm.summary = it }
 
             if (vm.linkedinUrl.isNotBlank()) {
@@ -154,29 +165,34 @@ fun ReviewScreen(
 }
 
 @Composable
-private fun Avatar(url: String) {
+private fun Avatar(url: String, loading: Boolean = false) {
     val shape = CircleShape
-    if (url.isBlank()) {
-        Box(
-            Modifier
-                .size(72.dp)
-                .clip(shape)
-                .background(MaterialTheme.colorScheme.secondaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Filled.Person,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+    Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+        if (url.isBlank()) {
+            Box(
+                Modifier
+                    .size(72.dp)
+                    .clip(shape)
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+        } else {
+            AsyncImage(
+                model = url,
+                contentDescription = "Profile picture",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(72.dp).clip(shape),
             )
         }
-    } else {
-        AsyncImage(
-            model = url,
-            contentDescription = "Profile picture",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(72.dp).clip(shape),
-        )
+        if (loading) {
+            CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
+        }
     }
 }
 

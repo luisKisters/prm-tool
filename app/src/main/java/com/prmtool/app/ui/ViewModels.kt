@@ -18,10 +18,17 @@ import com.prmtool.app.data.db.ContactEntity
 import com.prmtool.app.data.db.EventEntity
 import com.prmtool.app.data.db.SendStatus
 import com.prmtool.app.data.db.SourceEntity
+import com.prmtool.app.net.ApiClient
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -136,6 +143,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 /** Backs the review screen for one contact. Editable fields are seeded from the enrichment. */
 class ReviewViewModel(app: Application, private val clientId: String) : AndroidViewModel(app) {
     private val repo = (app as PrmApplication).container.repository
+    private val settings = (app as PrmApplication).container.settings
 
     var loaded by mutableStateOf(false)
         private set
@@ -156,6 +164,13 @@ class ReviewViewModel(app: Application, private val clientId: String) : AndroidV
     var enrichedTags by mutableStateOf<List<String>>(emptyList())
         private set
 
+    /** True while we're re-fetching the headline + photo for an edited LinkedIn URL. */
+    var linkedinLookupInProgress by mutableStateOf(false)
+        private set
+
+    private var lookupJob: Job? = null
+    private var lastLookedUpUrl: String = ""
+
     init {
         viewModelScope.launch {
             val c = repo.getContact(clientId)
@@ -172,10 +187,55 @@ class ReviewViewModel(app: Application, private val clientId: String) : AndroidV
                 summary = c.summary
                 avatarUrl = c.avatarUrl
                 enrichedTags = repo.decodeTags(c.enrichedJson)
+                // Seed so editing back to the originally-enriched URL doesn't re-fetch needlessly.
+                lastLookedUpUrl = c.linkedinUrl.trim()
             }
             loaded = true
         }
     }
+
+    /**
+     * Called as the user edits the LinkedIn URL. When it becomes a valid profile URL we debounce,
+     * then re-derive the photo + headline for that profile and apply whatever comes back (blank
+     * results clear the photo/headline). A network failure leaves the existing values untouched.
+     */
+    fun onLinkedinUrlChange(newUrl: String) {
+        linkedinUrl = newUrl
+        lookupJob?.cancel()
+
+        val trimmed = newUrl.trim()
+        if (!isLinkedinProfileUrl(trimmed) || trimmed.equals(lastLookedUpUrl, ignoreCase = true)) {
+            linkedinLookupInProgress = false
+            return
+        }
+
+        lookupJob = viewModelScope.launch {
+            delay(700) // let typing settle before hitting the backend
+            val baseUrl = settings.apiBaseUrl.first()
+            val token = settings.apiToken.first()
+            if (baseUrl.isBlank() || token.isBlank()) return@launch
+
+            linkedinLookupInProgress = true
+            try {
+                val name = listOf(firstName, lastName).filter { it.isNotBlank() }.joinToString(" ")
+                val result = withContext(Dispatchers.IO) {
+                    ApiClient.lookupLinkedin(baseUrl, token, trimmed, name)
+                }
+                lastLookedUpUrl = trimmed
+                avatarUrl = result.avatarUrl
+                headline = result.headline
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Keep the existing photo + headline on lookup failure.
+            } finally {
+                linkedinLookupInProgress = false
+            }
+        }
+    }
+
+    private fun isLinkedinProfileUrl(url: String): Boolean =
+        Regex("""linkedin\.com/in/[^/?\s#]+""", RegexOption.IGNORE_CASE).containsMatchIn(url)
 
     fun confirm(onDone: () -> Unit) {
         viewModelScope.launch {
@@ -189,6 +249,7 @@ class ReviewViewModel(app: Application, private val clientId: String) : AndroidV
                     number = number.trim(),
                     headline = headline.trim(),
                     linkedinUrl = linkedinUrl.trim(),
+                    avatarUrl = avatarUrl.trim(),
                     summary = summary.trim(),
                 )
             )
