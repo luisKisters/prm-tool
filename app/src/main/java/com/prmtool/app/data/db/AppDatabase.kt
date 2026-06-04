@@ -8,7 +8,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ContactEntity::class, EventEntity::class, SourceEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -26,14 +26,18 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "prm.db"
-                ).addCallback(object : Callback() {
-                    override fun onCreate(db: SupportSQLiteDatabase) {
-                        // Seed default sources. "Event" is auto-added when an event is selected.
-                        listOf("Event", "Referral", "Cold outreach", "Online").forEach {
-                            db.execSQL("INSERT INTO sources (name) VALUES ('$it')")
+                )
+                    // 0.x app: the schema gained the enrichment/commit columns and a new status
+                    // model, so just rebuild rather than hand-writing a migration.
+                    .fallbackToDestructiveMigration()
+                    .addCallback(object : Callback() {
+                        override fun onCreate(db: SupportSQLiteDatabase) {
+                            // Seed default sources. "Event" is auto-added when an event is selected.
+                            listOf("Event", "Referral", "Cold outreach", "Online").forEach {
+                                db.execSQL("INSERT INTO sources (name) VALUES ('$it')")
+                            }
                         }
-                    }
-                }).build().also { INSTANCE = it }
+                    }).build().also { INSTANCE = it }
             }
     }
 }

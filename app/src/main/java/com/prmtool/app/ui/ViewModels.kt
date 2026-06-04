@@ -7,7 +7,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.prmtool.app.PrmApplication
 import com.prmtool.app.audio.VoiceRecorder
 import com.prmtool.app.data.db.ContactEntity
@@ -106,10 +110,10 @@ class AddContactViewModel(app: Application) : AndroidViewModel(app) {
             sources = selectedSources.joinToString(", "),
             voicePath = voiceFile?.absolutePath,
             createdAt = System.currentTimeMillis(),
-            status = SendStatus.PENDING.name
+            status = SendStatus.DRAFT.name
         )
         viewModelScope.launch {
-            repo.saveAndSend(contact)
+            repo.saveDraftAndEnrich(contact)
             onDone()
         }
     }
@@ -125,7 +129,88 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val recent: StateFlow<List<ContactEntity>> =
         repo.recentContacts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun retry(clientId: String) = repo.retry(clientId)
+    fun retryEnrich(clientId: String) = repo.retryEnrich(clientId)
+    fun retryCommit(clientId: String) = repo.retryCommit(clientId)
+}
+
+/** Backs the review screen for one contact. Editable fields are seeded from the enrichment. */
+class ReviewViewModel(app: Application, private val clientId: String) : AndroidViewModel(app) {
+    private val repo = (app as PrmApplication).container.repository
+
+    var loaded by mutableStateOf(false)
+        private set
+    var notFound by mutableStateOf(false)
+        private set
+
+    var firstName by mutableStateOf("")
+    var lastName by mutableStateOf("")
+    var company by mutableStateOf("")
+    var companyDomain by mutableStateOf("")
+    var number by mutableStateOf("")
+    var headline by mutableStateOf("")
+    var linkedinUrl by mutableStateOf("")
+    var summary by mutableStateOf("")
+
+    var avatarUrl by mutableStateOf("")
+        private set
+    var enrichedTags by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    init {
+        viewModelScope.launch {
+            val c = repo.getContact(clientId)
+            if (c == null) {
+                notFound = true
+            } else {
+                firstName = c.firstName
+                lastName = c.lastName
+                company = c.company
+                companyDomain = c.companyDomain
+                number = c.number
+                headline = c.headline
+                linkedinUrl = c.linkedinUrl
+                summary = c.summary
+                avatarUrl = c.avatarUrl
+                enrichedTags = repo.decodeTags(c.enrichedJson)
+            }
+            loaded = true
+        }
+    }
+
+    fun confirm(onDone: () -> Unit) {
+        viewModelScope.launch {
+            val c = repo.getContact(clientId) ?: return@launch
+            repo.saveReviewedAndCommit(
+                c.copy(
+                    firstName = firstName.trim(),
+                    lastName = lastName.trim(),
+                    company = company.trim(),
+                    companyDomain = companyDomain.trim(),
+                    number = number.trim(),
+                    headline = headline.trim(),
+                    linkedinUrl = linkedinUrl.trim(),
+                    summary = summary.trim(),
+                )
+            )
+            onDone()
+        }
+    }
+
+    fun discard(onDone: () -> Unit) {
+        viewModelScope.launch {
+            repo.deleteContact(clientId)
+            onDone()
+        }
+    }
+
+    companion object {
+        fun factory(clientId: String): ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                val app = this[APPLICATION_KEY] as Application
+                ReviewViewModel(app, clientId)
+            }
+        }
+    }
 }
 
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
@@ -137,10 +222,13 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         repo.events.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val sources: StateFlow<List<SourceEntity>> =
         repo.sources.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val webhookUrl: StateFlow<String> =
-        settings.webhookUrl.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val apiBaseUrl: StateFlow<String> =
+        settings.apiBaseUrl.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val apiToken: StateFlow<String> =
+        settings.apiToken.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
-    fun setWebhookUrl(url: String) = viewModelScope.launch { settings.setWebhookUrl(url) }
+    fun setApiBaseUrl(url: String) = viewModelScope.launch { settings.setApiBaseUrl(url) }
+    fun setApiToken(token: String) = viewModelScope.launch { settings.setApiToken(token) }
 
     fun addEvent(name: String, startMillis: Long, endMillis: Long) =
         viewModelScope.launch { repo.addEvent(name, startMillis, endMillis) }

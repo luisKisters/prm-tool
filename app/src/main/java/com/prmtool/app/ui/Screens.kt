@@ -1,30 +1,41 @@
 package com.prmtool.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -34,8 +45,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.prmtool.app.data.db.ContactEntity
 import com.prmtool.app.data.db.SendStatus
 import java.text.SimpleDateFormat
@@ -47,7 +62,8 @@ import java.util.Locale
 fun HomeScreen(
     vm: HomeViewModel,
     onAdd: () -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    onReview: (String) -> Unit,
 ) {
     val recent by vm.recent.collectAsState()
 
@@ -63,9 +79,11 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAdd) {
-                Icon(Icons.Filled.Add, contentDescription = "Add contact")
-            }
+            ExtendedFloatingActionButton(
+                onClick = onAdd,
+                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                text = { Text("New contact") },
+            )
         }
     ) { padding ->
         if (recent.isEmpty()) {
@@ -76,11 +94,16 @@ fun HomeScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(recent, key = { it.clientId }) { contact ->
-                    ContactRow(contact, onRetry = { vm.retry(contact.clientId) })
+                    ContactRow(
+                        contact = contact,
+                        onReview = { onReview(contact.clientId) },
+                        onRetryEnrich = { vm.retryEnrich(contact.clientId) },
+                        onRetryCommit = { vm.retryCommit(contact.clientId) },
+                    )
                 }
             }
         }
@@ -90,40 +113,74 @@ fun HomeScreen(
 private val dateFormat = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
 
 @Composable
-private fun ContactRow(contact: ContactEntity, onRetry: () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.fillMaxWidth(0.82f)) {
-                val name = listOf(contact.firstName, contact.lastName)
-                    .filter { it.isNotBlank() }.joinToString(" ")
-                    .ifBlank { contact.number.ifBlank { "(no name)" } }
-                Text(name, fontWeight = FontWeight.SemiBold)
-                if (contact.company.isNotBlank()) {
-                    Text(contact.company, style = MaterialTheme.typography.bodySmall)
+private fun ContactRow(
+    contact: ContactEntity,
+    onReview: () -> Unit,
+    onRetryEnrich: () -> Unit,
+    onRetryCommit: () -> Unit,
+) {
+    val uriHandler = LocalUriHandler.current
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RowAvatar(contact.avatarUrl)
+                Spacer(Modifier.size(14.dp))
+                Column(Modifier.fillMaxWidth(0.78f)) {
+                    val name = listOf(contact.firstName, contact.lastName)
+                        .filter { it.isNotBlank() }.joinToString(" ")
+                        .ifBlank { contact.number.ifBlank { "(no name)" } }
+                    Text(name, fontWeight = FontWeight.SemiBold)
+                    val subtitle = contact.headline.ifBlank { contact.company }
+                    if (subtitle.isNotBlank()) {
+                        Text(subtitle, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(
+                        dateFormat.format(Date(contact.createdAt)),
+                        style = MaterialTheme.typography.labelSmall
+                    )
                 }
-                if (contact.number.isNotBlank()) {
-                    Text(contact.number, style = MaterialTheme.typography.bodySmall)
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    StatusLabel(contact.status)
                 }
-                val meta = buildList {
-                    if (contact.events.isNotBlank()) add(contact.events)
-                    if (contact.sources.isNotBlank()) add(contact.sources)
-                }.joinToString(" · ")
-                if (meta.isNotBlank()) {
-                    Text(meta, style = MaterialTheme.typography.bodySmall)
-                }
-                Text(
-                    dateFormat.format(Date(contact.createdAt)),
-                    style = MaterialTheme.typography.labelSmall
-                )
             }
-            Column(horizontalAlignment = Alignment.End) {
-                StatusLabel(contact.status)
-                if (contact.status == SendStatus.FAILED.name) {
-                    IconButton(onClick = onRetry) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Retry")
+
+            // Per-status action row.
+            when (contact.status) {
+                SendStatus.ENRICHED.name -> {
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = onReview, modifier = Modifier.fillMaxWidth()) {
+                        Text("Review & confirm")
+                    }
+                }
+                SendStatus.ENRICH_FAILED.name -> {
+                    Spacer(Modifier.height(12.dp))
+                    FilledTonalButton(onClick = onRetryEnrich, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text("Retry enrichment")
+                    }
+                }
+                SendStatus.COMMIT_FAILED.name -> {
+                    Spacer(Modifier.height(12.dp))
+                    FilledTonalButton(onClick = onRetryCommit, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text("Retry save")
+                    }
+                }
+                SendStatus.COMMITTED.name -> {
+                    if (!contact.twentyUrl.isNullOrBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = { runCatching { uriHandler.openUri(contact.twentyUrl) } }) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                            Spacer(Modifier.size(8.dp))
+                            Text("Open in Twenty")
+                        }
                     }
                 }
             }
@@ -132,11 +189,40 @@ private fun ContactRow(contact: ContactEntity, onRetry: () -> Unit) {
 }
 
 @Composable
+private fun RowAvatar(url: String) {
+    val shape = CircleShape
+    if (url.isBlank()) {
+        Box(
+            Modifier.size(48.dp).clip(shape).background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.Person,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+    } else {
+        AsyncImage(
+            model = url,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(48.dp).clip(shape),
+        )
+    }
+}
+
+@Composable
 private fun StatusLabel(status: String) {
     val (text, color) = when (status) {
-        SendStatus.SENT.name -> "Sent" to MaterialTheme.colorScheme.primary
-        SendStatus.FAILED.name -> "Failed" to MaterialTheme.colorScheme.error
-        else -> "Pending" to MaterialTheme.colorScheme.tertiary
+        SendStatus.COMMITTED.name -> "Saved" to MaterialTheme.colorScheme.primary
+        SendStatus.ENRICHED.name -> "Needs review" to MaterialTheme.colorScheme.tertiary
+        SendStatus.ENRICHING.name -> "Enriching…" to MaterialTheme.colorScheme.secondary
+        SendStatus.COMMITTING.name -> "Saving…" to MaterialTheme.colorScheme.secondary
+        SendStatus.DRAFT.name -> "Queued" to MaterialTheme.colorScheme.secondary
+        SendStatus.ENRICH_FAILED.name -> "Enrich failed" to MaterialTheme.colorScheme.error
+        SendStatus.COMMIT_FAILED.name -> "Save failed" to MaterialTheme.colorScheme.error
+        else -> status to MaterialTheme.colorScheme.secondary
     }
     Text(text, color = color, style = MaterialTheme.typography.labelMedium)
 }
@@ -146,13 +232,13 @@ private fun StatusLabel(status: String) {
 fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val events by vm.events.collectAsState()
     val sources by vm.sources.collectAsState()
-    val webhookUrl by vm.webhookUrl.collectAsState()
+    val apiBaseUrl by vm.apiBaseUrl.collectAsState()
+    val apiToken by vm.apiToken.collectAsState()
 
-    var urlField by androidx.compose.runtime.remember(webhookUrl) {
-        androidx.compose.runtime.mutableStateOf(webhookUrl)
-    }
-    var showEventDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    var newSource by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    var urlField by remember(apiBaseUrl) { mutableStateOf(apiBaseUrl) }
+    var tokenField by remember(apiToken) { mutableStateOf(apiToken) }
+    var showEventDialog by remember { mutableStateOf(false) }
+    var newSource by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
@@ -160,7 +246,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 title = { Text("Settings") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -168,22 +254,36 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text("Webhook", style = MaterialTheme.typography.titleMedium)
-                androidx.compose.material3.OutlinedTextField(
+                Text("Backend", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
                     value = urlField,
                     onValueChange = { urlField = it },
-                    label = { Text("n8n webhook URL") },
+                    label = { Text("API base URL") },
+                    placeholder = { Text("https://your-app.vercel.app") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(6.dp))
-                androidx.compose.material3.Button(onClick = { vm.setWebhookUrl(urlField) }) {
-                    Text("Save URL")
-                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = tokenField,
+                    onValueChange = { tokenField = it },
+                    label = { Text("API secret token") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        vm.setApiBaseUrl(urlField)
+                        vm.setApiToken(tokenField)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Save backend settings") }
             }
 
             item {
@@ -193,7 +293,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Events", style = MaterialTheme.typography.titleMedium)
-                    androidx.compose.material3.TextButton(onClick = { showEventDialog = true }) {
+                    TextButton(onClick = { showEventDialog = true }) {
                         Icon(Icons.Filled.Add, contentDescription = null)
                         Text(" Add")
                     }
@@ -202,7 +302,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
             items(events, key = { "e${it.id}" }) { event ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
-                        Modifier.fillMaxWidth().padding(12.dp),
+                        Modifier.fillMaxWidth().padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.fillMaxWidth(0.85f)) {
@@ -222,8 +322,9 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
 
             item {
                 Text("Sources", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.OutlinedTextField(
+                    OutlinedTextField(
                         value = newSource,
                         onValueChange = { newSource = it },
                         label = { Text("New source") },
@@ -231,7 +332,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(0.7f)
                     )
                     Spacer(Modifier.fillMaxWidth(0.04f))
-                    androidx.compose.material3.Button(
+                    Button(
                         onClick = {
                             if (newSource.isNotBlank()) {
                                 vm.addSource(newSource.trim())
@@ -244,7 +345,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
             items(sources, key = { "s${it.id}" }) { source ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
-                        Modifier.fillMaxWidth().padding(12.dp),
+                        Modifier.fillMaxWidth().padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {

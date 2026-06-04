@@ -7,8 +7,8 @@ import com.prmtool.app.PrmApplication
 import com.prmtool.app.data.db.SendStatus
 import kotlinx.coroutines.flow.first
 
-/** Sends one stored contact to the webhook, retrying with backoff on failure. */
-class SendWorker(
+/** Commits one reviewed contact to Twenty + Google Contacts via /api/commit. */
+class CommitWorker(
     appContext: Context,
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
@@ -19,21 +19,23 @@ class SendWorker(
         val repo = container.repository
 
         val contact = repo.getContact(clientId) ?: return Result.failure()
-        val url = container.settings.webhookUrl.first()
-        if (url.isBlank()) {
-            repo.updateStatus(clientId, SendStatus.FAILED)
+        val baseUrl = container.settings.apiBaseUrl.first()
+        val token = container.settings.apiToken.first()
+        if (baseUrl.isBlank()) {
+            repo.updateStatus(clientId, SendStatus.COMMIT_FAILED)
             return Result.failure()
         }
 
+        repo.updateStatus(clientId, SendStatus.COMMITTING)
         return try {
-            WebhookSender.send(url, contact)
-            repo.updateStatus(clientId, SendStatus.SENT)
+            val result = ApiClient.commit(baseUrl, token, repo.buildCommitRequest(contact))
+            repo.applyCommitResult(clientId, result)
             Result.success()
         } catch (e: Exception) {
             if (runAttemptCount < MAX_ATTEMPTS) {
                 Result.retry()
             } else {
-                repo.updateStatus(clientId, SendStatus.FAILED)
+                repo.updateStatus(clientId, SendStatus.COMMIT_FAILED)
                 Result.failure()
             }
         }

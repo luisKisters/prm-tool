@@ -18,8 +18,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
@@ -114,14 +114,13 @@ fun ContactForm(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = { onMicClick() }) {
+            FilledTonalButton(onClick = { onMicClick() }) {
                 Icon(
                     if (vm.isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
                     contentDescription = null
                 )
-                Spacer(Modifier.height(0.dp))
                 Text(
                     if (vm.isRecording) "  Stop" else "  Record",
                 )
@@ -178,7 +177,7 @@ fun ContactForm(
             Button(
                 onClick = { vm.save(onSaved) },
                 enabled = vm.canSave
-            ) { Text("Save & send") }
+            ) { Text("Save & enrich") }
         }
         Spacer(Modifier.height(8.dp))
     }

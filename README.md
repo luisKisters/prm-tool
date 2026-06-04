@@ -18,7 +18,7 @@
 
 ---
 
-A tiny Android app for personal relationship management. You meet someone, you tap the Quick Settings tile, you jot a name and a voice note, and you hit **Save & send**. A single webhook fires an [n8n](https://n8n.io) workflow that transcribes your voice memo, finds the person on LinkedIn, writes a clean CRM note, and files them in [Twenty](https://twenty.com) and Google Contacts. If you are offline, it queues and retries.
+A tiny Android app for personal relationship management. You meet someone, you tap the Quick Settings tile, you jot a name and a voice note, and you hit **Save & enrich**. A [Next.js](https://nextjs.org) backend on Vercel transcribes your voice memo, finds the person on LinkedIn, grabs their profile picture, resolves the company domain, and writes a clean summary. The app shows you everything it found; you **review and confirm** (editing anything that's off), and only then is the person filed in [Twenty](https://twenty.com) and Google Contacts. If you are offline, capture queues and enrichment runs as soon as you reconnect.
 
 ## Screens
 
@@ -60,78 +60,101 @@ A tiny Android app for personal relationship management. You meet someone, you t
 ## How it works
 
 ```
-Android app  ──POST multipart──►  n8n webhook  ──►  Twenty CRM + Google Contacts
-  (Compose)                       (transcribe,        (person record +
-                                   enrich, summarize)   synced contact)
+                     ┌──────────────── POST /api/enrich (multipart) ───────────────┐
+Android app  ───────►│  Vercel backend (Next.js)                                   │
+  (Compose)          │   transcribe (Groq) · LinkedIn + avatar + domain (Serper)   │
+     ▲               │   summarize (Kimi K2.6 / OpenRouter)  — no writes           │
+     │  enriched     └─────────────────────────────────────────────────────────────┘
+     │  data
+  Review & confirm (edit anything)
+     │
+     └──────────────► POST /api/commit ──► Twenty CRM person + Google Contact
+                        (idempotent on the stable PRM ID, stored in both)
 ```
 
-The app posts a `multipart/form-data` request to your n8n webhook with the contact fields plus the optional voice file:
+The flow is two steps:
 
-```
-firstName, lastName, company, number, note,
-events, sources, clientId, createdAt, voice (audio/mp4)
-```
+1. **Enrich** (`POST /api/enrich`, `multipart/form-data`) — read-only. The app sends the captured
+   fields + optional voice file; the backend returns what it found, **without writing anywhere**:
 
-n8n responds with JSON the app stores against the contact:
+   ```
+   firstName, lastName, company, number, note, events, sources, clientId, createdAt, voice (audio/mp4)
+   ```
+   ```json
+   {
+     "prmId": "…", "transcript": "…",
+     "linkedinUrl": "https://linkedin.com/in/…", "headline": "Founder at …",
+     "avatarUrl": "https://…", "companyDomain": "acme.com",
+     "summary": "Met at the founder dinner, building in fintech.",
+     "enriched": ["LINKEDIN", "JOB_TITLE", "AVATAR", "COMPANY"]
+   }
+   ```
 
-```json
-{
-  "status": "ok",
-  "twentyContactUrl": "https://your-crm/object/person/<id>",
-  "linkedinUrl": "https://linkedin.com/in/...",
-  "summary": "Met at the founder dinner, building in fintech.",
-  "googleContactId": "people/c123..."
-}
-```
+2. **Commit** (`POST /api/commit`, `application/json`) — after you confirm in the review screen, the
+   backend upserts the Twenty person and creates the Google contact, then returns the IDs:
 
-## The n8n workflow
+   ```json
+   { "prmId": "…", "twentyId": "…", "twentyUrl": "https://crm…/object/person/…", "googleResourceName": "people/c…" }
+   ```
 
-The full, importable workflow lives in [`n8n/add-contact.workflow.json`](n8n/add-contact.workflow.json).
+### The stable PRM ID
 
-```mermaid
-flowchart LR
-  A[Receive Contact<br/>webhook] --> B[Transcribe Voice<br/>Groq Whisper]
-  B --> C[Build Contact Fields]
-  C --> D[Search LinkedIn<br/>Serper]
-  D --> E[Evaluate Enrichment]
-  E --> F{Has note<br/>or voice?}
-  F -- yes --> G[Summarize Note<br/>Kimi K2]
-  F -- no --> H[Build Notes]
-  G --> H
-  H --> I[Create Twenty Person]
-  I --> J[Create Google Contact]
-  J --> K[Respond to App]
-```
+Every contact carries a `prmId` (a UUID generated on capture). It is written to **both** systems —
+a `prmId` custom field on the Twenty person, and a **PRM ID** `userDefined` field on the Google
+contact (visible as a custom field in the Google Contacts UI). Because the identifier is independent
+of the name and notes, the person stays identifiable after you rename or edit them — and commit is
+**idempotent**: re-running it finds the existing Twenty person by `prmId` and updates rather than
+duplicating.
 
-Steps:
+## The backend
 
-1. **Transcribe** the voice memo with Groq Whisper.
-2. **Find** the person on LinkedIn with a Serper Google search.
-3. **Summarize** the note and transcript with Kimi K2 (only when there is something to summarize).
-4. **Create** the Twenty person, then a Google contact whose bio links back to the Twenty record.
+A stateless Next.js (App Router) API under [`backend/`](backend/), deployed to Vercel. It has no
+database — the Android app (Room) is the source of truth and carries the enrichment between the two
+calls. Phone numbers are split into Twenty's required parts (national number, calling code, ISO
+country) before they're sent.
 
-It needs credentials for Groq, Serper, OpenRouter, Twenty, and Google Contacts. The Twenty person object also needs one custom field:
+It needs these environment variables (see [`backend/.env.example`](backend/.env.example)):
 
-> **Field:** `Enriched` &nbsp;·&nbsp; **Type:** Multi-Select &nbsp;·&nbsp; **Object:** Person
-> **Option values:** `EMAIL`, `PHONE`, `LINKEDIN`, `JOB_TITLE`, `CITY`, `COMPANY`, `AVATAR`
+| Variable | Purpose |
+| --- | --- |
+| `APP_API_SECRET` | Shared bearer token the app sends; gates both endpoints |
+| `GROQ_API_KEY` | Voice transcription (`whisper-large-v3`) |
+| `SERPER_API_KEY` | LinkedIn URL + avatar (`/images`) + company domain (knowledge graph) |
+| `OPENROUTER_API_KEY` | Note summary; model `OPENROUTER_MODEL` defaults to `moonshotai/kimi-k2.6` |
+| `TWENTY_API_KEY`, `TWENTY_BASE_URL` | Twenty CRM REST API |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | Google People API |
 
-The workflow fills `Enriched` with whatever it managed to look up (for example `LINKEDIN`, `JOB_TITLE`). Phone numbers are split into Twenty's required parts (national number, calling code, ISO country) so the CRM accepts them.
+The Twenty Person object needs two custom fields:
 
-<!-- Optional: drop a screenshot of the n8n canvas here -->
-<!-- <p align="center"><img src="assets/n8n-workflow.png" width="800" alt="n8n workflow" /></p> -->
+> **`prmId`** &nbsp;·&nbsp; Type: **Text** &nbsp;— the stable identifier (created automatically if you use the bundled tooling).
+> **`Enriched`** &nbsp;·&nbsp; Type: **Multi-Select** &nbsp;·&nbsp; values `EMAIL`, `PHONE`, `LINKEDIN`, `JOB_TITLE`, `CITY`, `COMPANY`, `AVATAR`.
+
+> The previous [n8n workflow](n8n/add-contact.workflow.json) is kept for reference but is **deprecated** — the Next.js backend replaces it.
 
 ## Setup
 
-1. Import `n8n/add-contact.workflow.json` into n8n and connect the five credentials.
-2. Create the `Enriched` multi-select field in Twenty (values above).
-3. Activate the workflow and copy its production webhook URL.
-4. Install the app, open **Settings**, paste the URL, and add your events and sources.
+**Backend (Vercel):**
+
+1. `cd backend && pnpm install`.
+2. Create an OAuth 2.0 *Desktop app* client in Google Cloud, enable the **People API**, then run
+   `GOOGLE_CLIENT_ID=… GOOGLE_CLIENT_SECRET=… pnpm google-auth` and copy the printed refresh token.
+3. Import `backend/` as a Vercel project (set **Root Directory** to `backend`) and add the env vars above.
+4. Ensure the Twenty `prmId` (Text) and `Enriched` (Multi-Select) fields exist on Person.
+
+**App:**
+
+5. Install the APK, open **Settings**, paste the **API base URL** (your Vercel URL) and the **API
+   secret token** (`APP_API_SECRET`), and add your events and sources.
 
 ## Build
 
 ```bash
+# Android app
 ./gradlew :app:assembleDebug
 # output: app/build/outputs/apk/debug/app-debug.apk
+
+# Backend
+cd backend && pnpm install && pnpm build
 ```
 
-Requires JDK 17 and the Android SDK (compileSdk 34, minSdk 26).
+App requires JDK 17 and the Android SDK (compileSdk 34, minSdk 26). Backend requires Node 18+.

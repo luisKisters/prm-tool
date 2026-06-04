@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -12,14 +13,23 @@ interface ContactDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(contact: ContactEntity)
 
+    @Update
+    suspend fun update(contact: ContactEntity)
+
     @Query("SELECT * FROM contacts ORDER BY createdAt DESC LIMIT 200")
     fun recent(): Flow<List<ContactEntity>>
 
     @Query("SELECT * FROM contacts WHERE clientId = :clientId")
     suspend fun getByClientId(clientId: String): ContactEntity?
 
+    @Query("SELECT * FROM contacts WHERE clientId = :clientId")
+    fun observe(clientId: String): Flow<ContactEntity?>
+
     @Query("UPDATE contacts SET status = :status WHERE clientId = :clientId")
     suspend fun updateStatus(clientId: String, status: String)
+
+    @Query("DELETE FROM contacts WHERE clientId = :clientId")
+    suspend fun delete(clientId: String)
 }
 
 @Dao

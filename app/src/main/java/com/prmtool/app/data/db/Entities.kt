@@ -3,11 +3,23 @@ package com.prmtool.app.data.db
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-/** Send status for a locally-stored contact. */
-enum class SendStatus { PENDING, SENT, FAILED }
+/**
+ * Lifecycle of a captured contact:
+ *   DRAFT        just saved locally, enrichment queued
+ *   ENRICHING    enrich request in flight
+ *   ENRICHED     enrichment returned, waiting for the user to review/confirm
+ *   ENRICH_FAILED enrichment failed after retries (retryable)
+ *   COMMITTING   commit request in flight
+ *   COMMITTED    written to Twenty + Google Contacts
+ *   COMMIT_FAILED commit failed after retries (retryable)
+ */
+enum class SendStatus {
+    DRAFT, ENRICHING, ENRICHED, ENRICH_FAILED, COMMITTING, COMMITTED, COMMIT_FAILED
+}
 
 @Entity(tableName = "contacts")
 data class ContactEntity(
+    /** Stable PRM identifier (also the prmId stored in Twenty + Google). */
     @PrimaryKey val clientId: String,
     val firstName: String,
     val lastName: String,
@@ -21,7 +33,22 @@ data class ContactEntity(
     /** Absolute path to the recorded voice note, or null. */
     val voicePath: String?,
     val createdAt: Long,
-    val status: String
+    val status: String,
+
+    // --- Enrichment results (filled by EnrichWorker, editable on the review screen) ---
+    val transcript: String = "",
+    val linkedinUrl: String = "",
+    val headline: String = "",
+    val avatarUrl: String = "",
+    val companyDomain: String = "",
+    val summary: String = "",
+    /** JSON array of enrichment tags, e.g. ["LINKEDIN","AVATAR"]. */
+    val enrichedJson: String = "",
+
+    // --- Commit results (filled by CommitWorker) ---
+    val twentyId: String? = null,
+    val twentyUrl: String? = null,
+    val googleResourceName: String? = null,
 )
 
 @Entity(tableName = "events")
