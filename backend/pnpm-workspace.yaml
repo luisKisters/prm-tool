@@ -2,3 +2,5 @@
 # pnpm's pre-run dependency check doesn't treat the skipped build as fatal.
 allowBuilds:
   sharp: true
+  # native binding for eslint-config-next's import resolver (lint only)
+  unrs-resolver: true
