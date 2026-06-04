@@ -54,6 +54,7 @@ A tiny Android app for personal relationship management. You meet someone, you t
 - **One tap capture** from the Quick Settings tile, no need to open the app.
 - **Voice notes** recorded inline and sent with the contact.
 - **Events and sources** you define once and reuse for fast tagging.
+- **Live LinkedIn re-fetch.** Edit the LinkedIn URL on the review screen and the photo + headline re-resolve for that exact profile (or clear, if it can't be found).
 - **Offline first.** Contacts are stored locally (Room) and sent by a WorkManager job that retries on failure.
 - **Material You.** Dynamic color on Android 12+, with a branded fallback palette below it.
 
@@ -97,6 +98,12 @@ The flow is two steps:
    { "prmId": "…", "twentyId": "…", "twentyUrl": "https://crm…/object/person/…", "googleResourceName": "people/c…" }
    ```
 
+Between the two, editing the LinkedIn URL in the review screen calls a small read-only helper that
+re-derives the photo and headline for *that* profile (debounced; blank when it can't be resolved):
+
+   - **LinkedIn lookup** (`POST /api/linkedin`, `application/json`) — `{ "url": "…", "name": "…" }`
+     → `{ "linkedinUrl": "…", "headline": "…", "avatarUrl": "…" }`.
+
 ### The stable PRM ID
 
 Every contact carries a `prmId` (a UUID generated on capture). It is written to **both** systems —
@@ -117,9 +124,9 @@ It needs these environment variables (see [`backend/.env.example`](backend/.env.
 
 | Variable | Purpose |
 | --- | --- |
-| `APP_API_SECRET` | Shared bearer token the app sends; gates both endpoints |
+| `APP_API_SECRET` | Shared bearer token the app sends; gates every endpoint |
 | `GROQ_API_KEY` | Voice transcription (`whisper-large-v3`) |
-| `SERPER_API_KEY` | LinkedIn URL + avatar (`/images`) + company domain (knowledge graph) |
+| `SERPER_API_KEY` | LinkedIn URL + avatar (`/images`) + company domain (knowledge graph) + per-profile re-fetch |
 | `OPENROUTER_API_KEY` | Note summary; model `OPENROUTER_MODEL` defaults to `moonshotai/kimi-k2.6` |
 | `TWENTY_API_KEY`, `TWENTY_BASE_URL` | Twenty CRM REST API |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | Google People API |
