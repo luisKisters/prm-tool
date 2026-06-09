@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,6 +8,18 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
 }
+
+// Release signing. In CI it comes from env vars (decoded from GitHub secrets); locally it falls
+// back to a gitignored keystore.properties at the repo root. When neither is present the release
+// build stays unsigned (e.g. a fresh checkout) rather than failing.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) FileInputStream(keystorePropsFile).use { load(it) }
+}
+fun signing(env: String, prop: String): String? =
+    System.getenv(env) ?: keystoreProps.getProperty(prop)
+val releaseStoreFile = signing("ANDROID_KEYSTORE_FILE", "storeFile")
+val hasReleaseSigning = releaseStoreFile != null && file(releaseStoreFile).exists()
 
 android {
     namespace = "com.prmtool.app"
@@ -14,9 +29,20 @@ android {
         applicationId = "com.prmtool.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = signing("ANDROID_KEYSTORE_PASSWORD", "storePassword")
+                keyAlias = signing("ANDROID_KEY_ALIAS", "keyAlias")
+                keyPassword = signing("ANDROID_KEY_PASSWORD", "keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -26,6 +52,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
