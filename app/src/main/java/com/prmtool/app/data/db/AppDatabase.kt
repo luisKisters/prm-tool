@@ -4,7 +4,23 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+
+/**
+ * v2 → v3: add the email, source-details and company-enrichment columns to `contacts`.
+ * Done as an additive ALTER so existing drafts, events and sources are preserved on upgrade.
+ */
+private val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE contacts ADD COLUMN email TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE contacts ADD COLUMN sourceDetails TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE contacts ADD COLUMN companyLinkedinUrl TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE contacts ADD COLUMN companyEmployees INTEGER")
+        db.execSQL("ALTER TABLE contacts ADD COLUMN companyAddress TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE contacts ADD COLUMN companyEnrichedJson TEXT NOT NULL DEFAULT ''")
+    }
+}
 
 @Database(
     entities = [ContactEntity::class, EventEntity::class, SourceEntity::class],
@@ -27,8 +43,9 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "prm.db"
                 )
-                    // 0.x app: the schema gained the enrichment/commit columns and a new status
-                    // model, so just rebuild rather than hand-writing a migration.
+                    // v2→v3 preserves data via MIGRATION_2_3; destructive fallback covers any
+                    // older/unknown schema only.
+                    .addMigrations(MIGRATION_2_3)
                     .fallbackToDestructiveMigration()
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
