@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "google-auth": "node scripts/google-oauth.mjs"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
     "@types/react": "^19.0.7",
     "eslint": "^9.39.4",
     "eslint-config-next": "15.5.19",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.8"
   }
 }

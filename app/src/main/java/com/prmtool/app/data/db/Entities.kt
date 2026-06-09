@@ -23,6 +23,7 @@ data class ContactEntity(
     @PrimaryKey val clientId: String,
     val firstName: String,
     val lastName: String,
+    val email: String = "",
     val company: String,
     val number: String,
     val note: String,
@@ -30,6 +31,8 @@ data class ContactEntity(
     val events: String,
     /** Comma-separated source names selected for this contact. */
     val sources: String,
+    /** Free-text detail about how/where this contact was sourced. */
+    val sourceDetails: String = "",
     /** Absolute path to the recorded voice note, or null. */
     val voicePath: String?,
     val createdAt: Long,
@@ -41,6 +44,11 @@ data class ContactEntity(
     val headline: String = "",
     val avatarUrl: String = "",
     val companyDomain: String = "",
+    val companyLinkedinUrl: String = "",
+    val companyEmployees: Int? = null,
+    val companyAddress: String = "",
+    /** JSON array of company enrichment tags, e.g. ["DOMAIN","LINKEDIN"]. */
+    val companyEnrichedJson: String = "",
     val summary: String = "",
     /** JSON array of enrichment tags, e.g. ["LINKEDIN","AVATAR"]. */
     val enrichedJson: String = "",

@@ -16,3 +16,4 @@
 .cxx
 local.properties
 app/build/
+.claude/settings.local.json

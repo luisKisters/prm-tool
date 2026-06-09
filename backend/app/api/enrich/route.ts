@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { transcribe } from "@/lib/groq";
-import { findLinkedIn, findAvatar, findCompanyDomain } from "@/lib/serper";
+import { findLinkedIn, findAvatar, findCompanyDomain, findCompanyDetails } from "@/lib/serper";
 import { summarizeNote } from "@/lib/openrouter";
 import type { EnrichResult, EnrichedTag } from "@/lib/types";
 
@@ -56,13 +56,23 @@ export async function POST(req: Request) {
   if (avatarUrl) enriched.push("AVATAR");
   if (companyDomain) enriched.push("COMPANY");
 
+  // Enrich the company too (LinkedIn page, employee count, HQ) once we know a name/domain.
+  const companyDetails = company
+    ? await findCompanyDetails(company, companyDomain)
+    : { linkedinUrl: "", employees: null, address: "", enriched: companyDomain ? ["DOMAIN"] : [] };
+
   const result: EnrichResult = {
     prmId,
     transcript,
+    email: "",
     linkedinUrl: linkedin.linkedinUrl,
     headline: linkedin.headline,
     avatarUrl,
     companyDomain,
+    companyLinkedinUrl: companyDetails.linkedinUrl,
+    companyEmployees: companyDetails.employees,
+    companyAddress: companyDetails.address,
+    companyEnriched: companyDetails.enriched as EnrichResult["companyEnriched"],
     summary,
     enriched,
   };

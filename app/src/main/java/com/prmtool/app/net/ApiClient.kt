@@ -34,6 +34,7 @@ object ApiClient {
         val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("firstName", contact.firstName)
             .addFormDataPart("lastName", contact.lastName)
+            .addFormDataPart("email", contact.email)
             .addFormDataPart("company", contact.company)
             .addFormDataPart("number", contact.number)
             .addFormDataPart("note", contact.note)
@@ -87,6 +88,27 @@ object ApiClient {
                 throw IOException("LinkedIn lookup failed: HTTP ${response.code}")
             }
             return json.decodeFromString(LinkedinLookupResponse.serializer(), body)
+        }
+    }
+
+    /** Resolve a company domain to its website title. Best-effort; title may be blank. */
+    fun lookupCompany(
+        baseUrl: String,
+        token: String,
+        domain: String,
+    ): CompanyLookupResponse {
+        val request = Request.Builder()
+            .url(endpoint(baseUrl, "/api/company"))
+            .header("Authorization", "Bearer $token")
+            .post(json.encodeToString(CompanyLookupRequest(domain)).toRequestBody(jsonMediaType))
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw IOException("Company lookup failed: HTTP ${response.code}")
+            }
+            return json.decodeFromString(CompanyLookupResponse.serializer(), body)
         }
     }
 

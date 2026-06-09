@@ -8,7 +8,13 @@ interface OrganicResult {
 }
 interface SearchResponse {
   organic?: OrganicResult[];
-  knowledgeGraph?: { website?: string; descriptionLink?: string };
+  knowledgeGraph?: {
+    website?: string;
+    descriptionLink?: string;
+    title?: string;
+    type?: string;
+    attributes?: Record<string, string>;
+  };
 }
 interface ImagesResponse {
   images?: { imageUrl?: string; thumbnailUrl?: string }[];
@@ -130,7 +136,63 @@ export async function findCompanyDomain(company: string): Promise<string> {
   return "";
 }
 
-function toDomain(url: string): string {
+/** Parse an employee count from a knowledge-graph attribute value like "10,001+ employees". */
+export function parseEmployees(value: string | undefined): number | null {
+  if (!value) return null;
+  const m = value.replace(/,/g, "").match(/\d+/);
+  return m ? Number(m[0]) : null;
+}
+
+/** Pick the first knowledge-graph attribute whose key matches any of the given keywords. */
+function attr(attrs: Record<string, string> | undefined, keywords: string[]): string {
+  if (!attrs) return "";
+  for (const [k, v] of Object.entries(attrs)) {
+    const lk = k.toLowerCase();
+    if (keywords.some((kw) => lk.includes(kw))) return v;
+  }
+  return "";
+}
+
+/**
+ * Best-effort company enrichment: LinkedIn company page, employee count, and HQ location.
+ * Returns the fields plus the set of company `enriched` tags for whatever was found.
+ */
+export async function findCompanyDetails(
+  name: string,
+  domain: string,
+): Promise<{
+  linkedinUrl: string;
+  employees: number | null;
+  address: string;
+  enriched: string[];
+}> {
+  const enriched: string[] = [];
+  if (domain) enriched.push("DOMAIN");
+  if (!name.trim()) return { linkedinUrl: "", employees: null, address: "", enriched };
+
+  const [li, kg] = await Promise.all([
+    serper<SearchResponse>("/search", {
+      q: `${name} site:linkedin.com/company`,
+      num: 3,
+      gl: "us",
+      hl: "en",
+    }),
+    serper<SearchResponse>("/search", { q: name, num: 3, gl: "us", hl: "en" }),
+  ]);
+
+  const linkedinUrl =
+    li?.organic?.find((o) => (o.link ?? "").includes("linkedin.com/company"))?.link ?? "";
+  const attrs = kg?.knowledgeGraph?.attributes;
+  const employees = parseEmployees(attr(attrs, ["employee"]));
+  const address = attr(attrs, ["headquarter", "address", "location"]).trim();
+
+  if (linkedinUrl) enriched.push("LINKEDIN");
+  if (employees !== null) enriched.push("EMPLOYEES");
+  if (address) enriched.push("ADDRESS");
+  return { linkedinUrl, employees, address, enriched };
+}
+
+export function toDomain(url: string): string {
   try {
     const host = new URL(url.startsWith("http") ? url : `https://${url}`).hostname;
     return host.replace(/^www\./, "");

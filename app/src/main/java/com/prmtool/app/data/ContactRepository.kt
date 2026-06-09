@@ -75,10 +75,15 @@ class ContactRepository(
         contactDao.update(
             contact.copy(
                 transcript = result.transcript,
+                email = result.email.ifBlank { contact.email },
                 linkedinUrl = result.linkedinUrl,
                 headline = result.headline,
                 avatarUrl = result.avatarUrl,
                 companyDomain = result.companyDomain,
+                companyLinkedinUrl = result.companyLinkedinUrl,
+                companyEmployees = result.companyEmployees,
+                companyAddress = result.companyAddress,
+                companyEnrichedJson = Json.encodeToString(tagsSerializer, result.companyEnriched),
                 summary = result.summary,
                 enrichedJson = Json.encodeToString(tagsSerializer, result.enriched),
                 status = SendStatus.ENRICHED.name,
@@ -100,8 +105,13 @@ class ContactRepository(
         prmId = contact.clientId,
         firstName = contact.firstName,
         lastName = contact.lastName,
+        email = contact.email,
         company = contact.company,
         companyDomain = contact.companyDomain,
+        companyLinkedinUrl = contact.companyLinkedinUrl,
+        companyEmployees = contact.companyEmployees,
+        companyAddress = contact.companyAddress,
+        companyEnriched = decodeTags(contact.companyEnrichedJson),
         number = contact.number,
         headline = contact.headline,
         linkedinUrl = contact.linkedinUrl,
@@ -110,6 +120,7 @@ class ContactRepository(
         note = contact.note,
         events = contact.events,
         sources = contact.sources,
+        sourceDetails = contact.sourceDetails,
         enriched = decodeTags(contact.enrichedJson),
     )
 

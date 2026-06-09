@@ -42,9 +42,11 @@ class AddContactViewModel(app: Application) : AndroidViewModel(app) {
 
     var firstName by mutableStateOf("")
     var lastName by mutableStateOf("")
+    var email by mutableStateOf("")
     var company by mutableStateOf("")
     var number by mutableStateOf("")
     var note by mutableStateOf("")
+    var sourceDetails by mutableStateOf("")
 
     var isRecording by mutableStateOf(false)
         private set
@@ -110,11 +112,13 @@ class AddContactViewModel(app: Application) : AndroidViewModel(app) {
             clientId = clientId,
             firstName = firstName.trim(),
             lastName = lastName.trim(),
+            email = email.trim(),
             company = company.trim(),
             number = number.trim(),
             note = note.trim(),
             events = eventNames.joinToString(", "),
             sources = selectedSources.joinToString(", "),
+            sourceDetails = sourceDetails.trim(),
             voicePath = voiceFile?.absolutePath,
             createdAt = System.currentTimeMillis(),
             status = SendStatus.DRAFT.name
@@ -152,24 +156,42 @@ class ReviewViewModel(app: Application, private val clientId: String) : AndroidV
 
     var firstName by mutableStateOf("")
     var lastName by mutableStateOf("")
+    var email by mutableStateOf("")
     var company by mutableStateOf("")
     var companyDomain by mutableStateOf("")
     var number by mutableStateOf("")
     var headline by mutableStateOf("")
     var linkedinUrl by mutableStateOf("")
     var summary by mutableStateOf("")
+    var sourceDetails by mutableStateOf("")
 
     var avatarUrl by mutableStateOf("")
         private set
     var enrichedTags by mutableStateOf<List<String>>(emptyList())
         private set
 
+    // --- Company enrichment (read-only display) ---
+    var companyWebsiteTitle by mutableStateOf("")
+        private set
+    var companyEmployees by mutableStateOf<Int?>(null)
+        private set
+    var companyAddress by mutableStateOf("")
+        private set
+    var companyEnrichedTags by mutableStateOf<List<String>>(emptyList())
+        private set
+
     /** True while we're re-fetching the headline + photo for an edited LinkedIn URL. */
     var linkedinLookupInProgress by mutableStateOf(false)
         private set
 
+    /** True while we're resolving the company domain to its website title. */
+    var companyLookupInProgress by mutableStateOf(false)
+        private set
+
     private var lookupJob: Job? = null
     private var lastLookedUpUrl: String = ""
+    private var companyLookupJob: Job? = null
+    private var lastLookedUpDomain: String = ""
 
     init {
         viewModelScope.launch {
@@ -179,16 +201,24 @@ class ReviewViewModel(app: Application, private val clientId: String) : AndroidV
             } else {
                 firstName = c.firstName
                 lastName = c.lastName
+                email = c.email
                 company = c.company
                 companyDomain = c.companyDomain
                 number = c.number
                 headline = c.headline
                 linkedinUrl = c.linkedinUrl
                 summary = c.summary
+                sourceDetails = c.sourceDetails
                 avatarUrl = c.avatarUrl
                 enrichedTags = repo.decodeTags(c.enrichedJson)
-                // Seed so editing back to the originally-enriched URL doesn't re-fetch needlessly.
+                companyEmployees = c.companyEmployees
+                companyAddress = c.companyAddress
+                companyEnrichedTags = repo.decodeTags(c.companyEnrichedJson)
+                // Seed so editing back to the originally-enriched values doesn't re-fetch needlessly.
                 lastLookedUpUrl = c.linkedinUrl.trim()
+                lastLookedUpDomain = c.companyDomain.trim()
+                // Resolve the website title for the already-enriched domain.
+                if (c.companyDomain.isNotBlank()) fetchCompanyTitle(c.companyDomain.trim())
             }
             loaded = true
         }
@@ -237,6 +267,43 @@ class ReviewViewModel(app: Application, private val clientId: String) : AndroidV
     private fun isLinkedinProfileUrl(url: String): Boolean =
         Regex("""linkedin\.com/in/[^/?\s#]+""", RegexOption.IGNORE_CASE).containsMatchIn(url)
 
+    /** Called as the user edits the company domain; debounces, then resolves its website title. */
+    fun onCompanyDomainChange(newDomain: String) {
+        companyDomain = newDomain
+        companyLookupJob?.cancel()
+
+        val trimmed = newDomain.trim()
+        if (trimmed.isBlank() || trimmed.equals(lastLookedUpDomain, ignoreCase = true)) {
+            companyLookupInProgress = false
+            if (trimmed.isBlank()) companyWebsiteTitle = ""
+            return
+        }
+        companyLookupJob = viewModelScope.launch {
+            delay(700)
+            fetchCompanyTitle(trimmed)
+        }
+    }
+
+    private suspend fun fetchCompanyTitle(domain: String) {
+        val baseUrl = settings.apiBaseUrl.first()
+        val token = settings.apiToken.first()
+        if (baseUrl.isBlank() || token.isBlank()) return
+        companyLookupInProgress = true
+        try {
+            val result = withContext(Dispatchers.IO) {
+                ApiClient.lookupCompany(baseUrl, token, domain)
+            }
+            lastLookedUpDomain = domain
+            companyWebsiteTitle = result.title
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Leave the existing title on failure.
+        } finally {
+            companyLookupInProgress = false
+        }
+    }
+
     fun confirm(onDone: () -> Unit) {
         viewModelScope.launch {
             val c = repo.getContact(clientId) ?: return@launch
@@ -244,6 +311,7 @@ class ReviewViewModel(app: Application, private val clientId: String) : AndroidV
                 c.copy(
                     firstName = firstName.trim(),
                     lastName = lastName.trim(),
+                    email = email.trim(),
                     company = company.trim(),
                     companyDomain = companyDomain.trim(),
                     number = number.trim(),
@@ -251,6 +319,7 @@ class ReviewViewModel(app: Application, private val clientId: String) : AndroidV
                     linkedinUrl = linkedinUrl.trim(),
                     avatarUrl = avatarUrl.trim(),
                     summary = summary.trim(),
+                    sourceDetails = sourceDetails.trim(),
                 )
             )
             onDone()

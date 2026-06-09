@@ -115,8 +115,43 @@ fun ReviewScreen(
 
             Field("First name", vm.firstName) { vm.firstName = it }
             Field("Last name", vm.lastName) { vm.lastName = it }
+            Field("Email", vm.email, keyboard = KeyboardType.Email) { vm.email = it }
             Field("Company", vm.company) { vm.company = it }
-            Field("Company domain", vm.companyDomain) { vm.companyDomain = it }
+            Field("Company domain", vm.companyDomain) { vm.onCompanyDomainChange(it) }
+            if (vm.companyLookupInProgress) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.size(8.dp))
+                    Text("Resolving website…", style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(Modifier.height(10.dp))
+            } else if (vm.companyWebsiteTitle.isNotBlank()) {
+                Text(
+                    "Website: ${vm.companyWebsiteTitle}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+            }
+            if (vm.companyEmployees != null || vm.companyAddress.isNotBlank() ||
+                vm.companyEnrichedTags.isNotEmpty()
+            ) {
+                vm.companyEmployees?.let {
+                    Text("Employees: $it", style = MaterialTheme.typography.bodySmall)
+                }
+                if (vm.companyAddress.isNotBlank()) {
+                    Text("Location: ${vm.companyAddress}", style = MaterialTheme.typography.bodySmall)
+                }
+                if (vm.companyEnrichedTags.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        vm.companyEnrichedTags.forEach { tag ->
+                            AssistChip(onClick = {}, label = { Text(prettyCompanyTag(tag)) })
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
             Field("Phone", vm.number, keyboard = KeyboardType.Phone) { vm.number = it }
             Field("Job title / headline", vm.headline) { vm.headline = it }
             Field("LinkedIn URL", vm.linkedinUrl) { vm.onLinkedinUrlChange(it) }
@@ -132,6 +167,7 @@ fun ReviewScreen(
                 Spacer(Modifier.height(10.dp))
             }
             Field("Summary", vm.summary, minLines = 3) { vm.summary = it }
+            Field("Source details", vm.sourceDetails, minLines = 2) { vm.sourceDetails = it }
 
             if (vm.linkedinUrl.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
@@ -214,6 +250,14 @@ private fun Field(
         modifier = Modifier.fillMaxWidth(),
     )
     Spacer(Modifier.height(10.dp))
+}
+
+private fun prettyCompanyTag(tag: String): String = when (tag) {
+    "DOMAIN" -> "Domain"
+    "LINKEDIN" -> "LinkedIn"
+    "EMPLOYEES" -> "Employees"
+    "ADDRESS" -> "Location"
+    else -> tag.lowercase().replaceFirstChar { it.uppercase() }
 }
 
 private fun prettyTag(tag: String): String = when (tag) {

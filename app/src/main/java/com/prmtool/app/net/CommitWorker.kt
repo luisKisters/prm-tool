@@ -1,6 +1,9 @@
 package com.prmtool.app.net
 
+import android.content.ContentResolver
 import android.content.Context
+import android.os.Bundle
+import android.provider.ContactsContract
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.prmtool.app.PrmApplication
@@ -30,6 +33,7 @@ class CommitWorker(
         return try {
             val result = ApiClient.commit(baseUrl, token, repo.buildCommitRequest(contact))
             repo.applyCommitResult(clientId, result)
+            requestContactsResync()
             Result.success()
         } catch (e: Exception) {
             if (runAttemptCount < MAX_ATTEMPTS) {
@@ -38,6 +42,21 @@ class CommitWorker(
                 repo.updateStatus(clientId, SendStatus.COMMIT_FAILED)
                 Result.failure()
             }
+        }
+    }
+
+    /**
+     * Ask the system to sync Google Contacts down to the device so the just-created contact shows
+     * up in the phone's Contacts app promptly. A null account targets all accounts for the contacts
+     * authority, so no account-access permission is needed. Best-effort; failures are ignored.
+     */
+    private fun requestContactsResync() {
+        runCatching {
+            val extras = Bundle().apply {
+                putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true)
+                putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
+            }
+            ContentResolver.requestSync(null, ContactsContract.AUTHORITY, extras)
         }
     }
 

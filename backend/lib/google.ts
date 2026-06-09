@@ -71,8 +71,15 @@ export async function createContact(
     names: [{ givenName: body.firstName, familyName: body.lastName }],
     userDefined: [{ key: "PRM ID", value: body.prmId }],
     biographies: [{ value: buildBiography(body, twentyUrl), contentType: "TEXT_PLAIN" }],
+    // Land the contact in "My Contacts" so it syncs down to the phone's Contacts app.
+    memberships: [
+      { contactGroupMembership: { contactGroupResourceName: "contactGroups/myContacts" } },
+    ],
   };
 
+  if (body.email) {
+    requestBody.emailAddresses = [{ value: body.email, type: "work" }];
+  }
   if (body.company || body.headline) {
     requestBody.organizations = [
       { name: body.company || undefined, title: body.headline || undefined, current: true },

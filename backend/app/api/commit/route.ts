@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { CommitSchema, type CommitResult } from "@/lib/types";
 import { upsertPerson, personUrl } from "@/lib/twenty";
+import { upsertCompany } from "@/lib/twentyCompany";
 import { createContact } from "@/lib/google";
 
 export const runtime = "nodejs";
@@ -31,13 +32,26 @@ export async function POST(req: Request) {
   }
   const body = parsed.data;
 
-  const twentyId = await upsertPerson(body);
+  // Upsert + link the company first (when we have a domain) so the person carries the relation.
+  const twentyCompanyId = body.companyDomain
+    ? await upsertCompany({
+        name: body.company || body.companyDomain,
+        domain: body.companyDomain,
+        linkedinUrl: body.companyLinkedinUrl,
+        employees: body.companyEmployees,
+        address: body.companyAddress,
+        enriched: body.companyEnriched,
+      })
+    : null;
+
+  const twentyId = await upsertPerson(body, twentyCompanyId);
   const twentyUrl = twentyId ? personUrl(twentyId) : null;
   const googleResourceName = await createContact(body, twentyUrl);
 
   const result: CommitResult = {
     prmId: body.prmId,
     twentyId,
+    twentyCompanyId,
     twentyUrl,
     googleResourceName,
   };
