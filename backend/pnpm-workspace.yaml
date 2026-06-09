@@ -1,6 +1,8 @@
 # sharp is Next's only native dep (runtime image optimization); allow it to build so
 # pnpm's pre-run dependency check doesn't treat the skipped build as fatal.
 allowBuilds:
+  # esbuild ships a platform-specific native binary via its install script (used by vitest).
+  esbuild: true
   sharp: true
   # native binding for eslint-config-next's import resolver (lint only)
   unrs-resolver: true

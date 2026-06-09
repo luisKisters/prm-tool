@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from "@/lib/http";
+
 /** Transcribe a voice memo with Groq Whisper. Best-effort: returns "" on any failure. */
 export async function transcribe(voice: File): Promise<string> {
   const key = process.env.GROQ_API_KEY;
@@ -9,10 +11,12 @@ export async function transcribe(voice: File): Promise<string> {
   form.append("response_format", "json");
 
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    const res = await fetchWithTimeout("https://api.groq.com/openai/v1/audio/transcriptions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}` },
       body: form,
+      // Whisper is the slowest leg; give it most of the budget but still bound it.
+      timeoutMs: 35_000,
     });
     if (!res.ok) return "";
     const json = (await res.json()) as { text?: string };

@@ -36,19 +36,33 @@ export async function POST(req: Request) {
   const note = str("note");
   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
 
-  // Transcribe first (the summary depends on it), then enrich + summarize in parallel.
+  // Everything runs concurrently. The LinkedIn/avatar/company lookups don't depend on the voice
+  // transcript, so they fire immediately rather than waiting for Whisper. Only the summary needs
+  // the transcript, so it's chained off transcription — the one genuine dependency.
   const voice = form.get("voice");
-  const transcript = voice instanceof File ? await transcribe(voice) : "";
-  const fullNote = [note, transcript && `Voice transcript: ${transcript}`]
-    .filter(Boolean)
-    .join("\n\n");
+  const transcriptPromise = voice instanceof File ? transcribe(voice) : Promise.resolve("");
 
-  const [linkedin, avatarUrl, companyDomain, summary] = await Promise.all([
-    fullName ? findLinkedIn(fullName, company) : Promise.resolve({ linkedinUrl: "", headline: "" }),
-    fullName ? findAvatar(fullName, company) : Promise.resolve(""),
-    findCompanyDomain(company),
-    summarizeNote(fullNote),
-  ]);
+  const summaryPromise = transcriptPromise.then((transcript) => {
+    const fullNote = [note, transcript && `Voice transcript: ${transcript}`]
+      .filter(Boolean)
+      .join("\n\n");
+    return summarizeNote(fullNote);
+  });
+
+  // findCompanyDetails' network lookups key off the company *name* only (the domain arg merely
+  // adds the DOMAIN tag), so it runs in this same concurrent block instead of waiting for the
+  // domain. We fold the DOMAIN tag in afterwards once findCompanyDomain has resolved.
+  const [transcript, linkedin, avatarUrl, companyDomain, summary, companyDetailsRaw] =
+    await Promise.all([
+      transcriptPromise,
+      fullName ? findLinkedIn(fullName, company) : Promise.resolve({ linkedinUrl: "", headline: "" }),
+      fullName ? findAvatar(fullName, company) : Promise.resolve(""),
+      findCompanyDomain(company),
+      summaryPromise,
+      company
+        ? findCompanyDetails(company, "")
+        : Promise.resolve({ linkedinUrl: "", employees: null, address: "", enriched: [] as string[] }),
+    ]);
 
   const enriched: EnrichedTag[] = [];
   if (linkedin.linkedinUrl) enriched.push("LINKEDIN");
@@ -56,10 +70,10 @@ export async function POST(req: Request) {
   if (avatarUrl) enriched.push("AVATAR");
   if (companyDomain) enriched.push("COMPANY");
 
-  // Enrich the company too (LinkedIn page, employee count, HQ) once we know a name/domain.
-  const companyDetails = company
-    ? await findCompanyDetails(company, companyDomain)
-    : { linkedinUrl: "", employees: null, address: "", enriched: companyDomain ? ["DOMAIN"] : [] };
+  const companyDetails =
+    companyDomain && !companyDetailsRaw.enriched.includes("DOMAIN")
+      ? { ...companyDetailsRaw, enriched: ["DOMAIN", ...companyDetailsRaw.enriched] }
+      : companyDetailsRaw;
 
   const result: EnrichResult = {
     prmId,

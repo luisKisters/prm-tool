@@ -1,4 +1,5 @@
 /** Serper.dev helpers: LinkedIn lookup, best-effort avatar, and company domain. */
+import { fetchWithTimeout } from "@/lib/http";
 
 interface OrganicResult {
   link?: string;
@@ -24,10 +25,11 @@ async function serper<T>(path: string, body: Record<string, unknown>): Promise<T
   const key = process.env.SERPER_API_KEY;
   if (!key) return null;
   try {
-    const res = await fetch(`https://google.serper.dev${path}`, {
+    const res = await fetchWithTimeout(`https://google.serper.dev${path}`, {
       method: "POST",
       headers: { "X-API-KEY": key, "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      timeoutMs: 12_000,
     });
     if (!res.ok) return null;
     return (await res.json()) as T;

@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from "@/lib/http";
+
 /** Summarize a contact note with Kimi K2.6 via OpenRouter. Best-effort: "" on failure. */
 const DEFAULT_MODEL = "moonshotai/kimi-k2.6";
 
@@ -8,12 +10,13 @@ export async function summarizeNote(fullNote: string): Promise<string> {
 
   const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
   try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const res = await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
       },
+      timeoutMs: 20_000,
       body: JSON.stringify({
         model,
         temperature: 0.3,
